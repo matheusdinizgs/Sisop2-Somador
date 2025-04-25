@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug Cliente",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/cliente",
+        "args": ["4000"],  // coloque a porta aqui se necessário
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "externalConsole": true,
+        "MIMode": "gdb",
+        "setupCommands": [
+          {
+            "description": "Enable pretty-printing for gdb",
+            "text": "-enable-pretty-printing",
+            "ignoreFailures": true
+          }
+        ],
+        "preLaunchTask": "build cliente",
+        "miDebuggerPath": "/usr/bin/gdb"
+      }
+    ]
+  }
+  

@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 199309L
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -20,20 +21,24 @@
 #define PACKET_TYPE_REQ_ACK 4
 #define MAX_HISTORY 100000000
 
-struct requisicao {
+struct requisicao
+{
     uint32_t value;
 };
 
-struct requisicao_ack {
+struct requisicao_ack
+{
     uint32_t seqn;
     uint32_t num_reqs;
     uint64_t total_sum;
 };
 
-typedef struct __packet {
+typedef struct __packet
+{
     uint16_t type;
     uint32_t seqn;
-    union {
+    union
+    {
         struct requisicao req;
         struct requisicao_ack ack;
     } data;
@@ -50,18 +55,23 @@ pthread_mutex_t ack_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t ack_cond = PTHREAD_COND_INITIALIZER;
 int ack_recebido = 0;
 
-void current_time(char *buf, size_t len) {
+void current_time(char *buf, size_t len)
+{
     time_t now = time(NULL);
     strftime(buf, len, "%Y-%m-%d %H:%M:%S", localtime(&now));
 }
 
-void *interface_thread(void *arg) {
-    while (1) {
+void *interface_thread(void *arg)
+{
+    while (1)
+    {
         packet ack;
         ssize_t len = recvfrom(sock, &ack, sizeof(ack), 0, NULL, NULL);
-        if (len > 0 && ack.type == PACKET_TYPE_REQ_ACK) {
+        if (len > 0 && ack.type == PACKET_TYPE_REQ_ACK)
+        {
             pthread_mutex_lock(&ack_lock);
-            if (ack.seqn == seqn) {
+            if (ack.seqn == seqn)
+            {
                 char timebuf[64];
                 current_time(timebuf, sizeof(timebuf));
                 uint32_t value = valores_enviados[ack.seqn];
@@ -77,8 +87,10 @@ void *interface_thread(void *arg) {
     return NULL;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 2) {
+int main(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
         fprintf(stderr, "Uso: %s <porta>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -87,7 +99,8 @@ int main(int argc, char *argv[]) {
     int port = atoi(argv[1]);
 
     // Cria o socket com domínio AF_INET e tipo SOCK_DGRAM (protocolo UDP)
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
         perror("Cannot create socket");
         exit(EXIT_FAILURE);
     }
@@ -97,10 +110,11 @@ int main(int argc, char *argv[]) {
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(PORT);
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    bzero(&(servaddr.sin_zero), 8);
+    memset(&(servaddr.sin_zero), 0, 8);
 
     // Vincular o socket à porta
-    if (bind(sock, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+    if (bind(sock, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+    {
         perror("Cannot bind socket");
         close(sock);
         exit(EXIT_FAILURE);
@@ -110,7 +124,8 @@ int main(int argc, char *argv[]) {
     setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
 
     // Descoberta do servidor
-    if (discovery_send_broadcast(sock, port, &servaddr) < 0) {
+    if (discovery_send_broadcast(sock, port, &servaddr) < 0)
+    {
         fprintf(stderr, "Falha na descoberta do servidor\n");
         exit(EXIT_FAILURE);
     }
@@ -122,7 +137,8 @@ int main(int argc, char *argv[]) {
     pthread_t tid;
     pthread_create(&tid, NULL, interface_thread, NULL);
 
-    while (1) {
+    while (1)
+    {
         uint32_t value;
         if (scanf("%u", &value) != 1)
             break;
@@ -139,18 +155,21 @@ int main(int argc, char *argv[]) {
         ack_recebido = 0;
         sendto(sock, &req, sizeof(req), 0, (struct sockaddr *)&servaddr, addrlen);
 
-        while (!ack_recebido) {
+        while (!ack_recebido)
+        {
             struct timespec timeout;
             clock_gettime(CLOCK_REALTIME, &timeout);
-            timeout.tv_nsec += 10000000;  // 10ms = 10.000.000ns
-            if (timeout.tv_nsec >= 1000000000) {
+            timeout.tv_nsec += 10000000; // 10ms = 10.000.000ns
+            if (timeout.tv_nsec >= 1000000000)
+            {
                 timeout.tv_nsec -= 1000000000;
                 timeout.tv_sec++;
             }
 
             pthread_cond_timedwait(&ack_cond, &ack_lock, &timeout);
 
-            if (!ack_recebido) {
+            if (!ack_recebido)
+            {
                 // Reenviar a requisição
                 sendto(sock, &req, sizeof(req), 0, (struct sockaddr *)&servaddr, addrlen);
             }
@@ -160,7 +179,7 @@ int main(int argc, char *argv[]) {
     }
 
     close(sock);
-    pthread_cancel(tid);  // Encerrar a thread interface de maneira segura
+    pthread_cancel(tid); // Encerrar a thread interface de maneira segura
     pthread_join(tid, NULL);
     return 0;
 }
