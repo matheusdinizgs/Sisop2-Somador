@@ -105,28 +105,20 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Cria o container genérico que permite que o SO identifique a família do endereço
-    memset((char *)&servaddr, 0, sizeof(servaddr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(PORT);
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    memset(&(servaddr.sin_zero), 0, 8);
-
-    // Vincular o socket à porta
-    if (bind(sock, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+    // Configura o socket para enviar pacotes de broadcast
+    int broadcast = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0)
     {
-        perror("Cannot bind socket");
+        perror("Erro ao configurar socket para broadcast");
         close(sock);
         exit(EXIT_FAILURE);
     }
-    // Configura o socket para enviar pacotes de broadcast
-    int broadcast = 1;
-    setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
 
     // Descoberta do servidor
     if (discovery_send_broadcast(sock, port, &servaddr) < 0)
     {
         fprintf(stderr, "Falha na descoberta do servidor\n");
+        close(sock);
         exit(EXIT_FAILURE);
     }
 
