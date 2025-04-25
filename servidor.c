@@ -153,7 +153,7 @@ int main(int argc, char *argv[]) {
         recvfrom(sock, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliaddr, &len);
 
         if (pkt.type == PACKET_TYPE_DISCOVERY) {
-            discovery_handle_request(sock, &cliaddr, len);
+            discovery_handle_request(sock, &cliaddr, len, (discovery_packet *)&pkt);
         } else if (pkt.type == PACKET_TYPE_REQ) {
             pthread_t tid;
             void *ctx = malloc(sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));

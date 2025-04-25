@@ -1,22 +1,25 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-      {
-        "label": "build cliente",
-        "type": "shell",
-        "command": "gcc",
-        "args": [
-          "-g",
-          "cliente.c",
-          "discovery.c",
-          "-o",
-          "cliente"
-        ],
-        "group": {
-          "kind": "build",
-          "isDefault": true
-        }
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build cliente",
+      "type": "shell",
+      "command": "gcc",
+      "args": ["-g", "cliente.c", "discovery.c", "-o", "cliente"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
       }
-    ]
-  }
-  
+    },
+    {
+      "label": "build servidor",
+      "type": "shell",
+      "command": "gcc",
+      "args": ["-g", "servidor.c", "discovery.c", "-o", "servidor"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}
