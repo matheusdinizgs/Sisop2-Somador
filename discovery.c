@@ -13,7 +13,8 @@ int discovery_send_broadcast(int sock, uint16_t port, struct sockaddr_in *server
         .sin_port = htons(port),
         .sin_addr.s_addr = inet_addr("192.168.2.255")}; // Ensure this is the correct broadcast address
 
-    discovery_packet pkt = {.type = PACKET_TYPE_DISCOVERY};
+    uint32_t my_id = getpid();
+    discovery_packet pkt = {.type = PACKET_TYPE_DISCOVERY, .client_id = my_id};
 
     // Envia o pacote de descoberta
     if (sendto(sock, &pkt, sizeof(pkt), 0, (struct sockaddr *)&bcastaddr, sizeof(bcastaddr)) < 0)
@@ -22,23 +23,24 @@ int discovery_send_broadcast(int sock, uint16_t port, struct sockaddr_in *server
         return -1;
     }
 
-    // Aguarda a resposta do servidor
-    discovery_packet resp; // Separate buffer for the response
-    socklen_t addrlen = sizeof(*serveraddr);
-    if (recvfrom(sock, &resp, sizeof(resp), 0, (struct sockaddr *)serveraddr, &addrlen) < 0)
+    while (1)
     {
-        perror("Erro ao receber resposta do servidor");
-        return -1;
-    }
+        // Aguarda a resposta do servidor
+        discovery_packet resp; // Separate buffer for the response
+        socklen_t addrlen = sizeof(*serveraddr);
+        if (recvfrom(sock, &resp, sizeof(resp), 0, (struct sockaddr *)serveraddr, &addrlen) < 0)
+        {
+            perror("Erro ao receber resposta do servidor");
+            return -1;
+        }
 
-    // Verifica se o tipo do pacote recebido é PACKET_TYPE_DISCOVERY_ACK
-    if (resp.type == PACKET_TYPE_DISCOVERY_ACK)
-    {
-        return 0;
-    }
+        if (resp.type == PACKET_TYPE_DISCOVERY_ACK && resp.client_id == my_id)
+        {
+            return 0;
+        }
 
-    fprintf(stderr, "Resposta inesperada do servidor: tipo %d\n", resp.type);
-    return -1;
+        continue;
+    }
 }
 
 // Responde a uma mensagem de descoberta (servidor)

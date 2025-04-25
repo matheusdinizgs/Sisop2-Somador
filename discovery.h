@@ -12,6 +12,7 @@
 typedef struct __discovery_packet
 {
     uint16_t type;
+    uint32_t client_id;
 } discovery_packet;
 
 // Funções para o cliente
