@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "discovery.h"
+#include "cliente.h"
 
 #define PORT 4000
 #define MAX_BUFFER 1024
@@ -95,45 +96,9 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Pega a porta do argumento
-    int port = atoi(argv[1]);
-
-    // Cria o socket com domínio AF_INET e tipo SOCK_DGRAM (protocolo UDP)
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    if ((sock = init_socket_and_find_server(atoi(argv[1]))) < 0)
     {
-        perror("Cannot create socket");
-        exit(EXIT_FAILURE);
-    }
-
-    // Vincula o socket a um endereço e porta
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(0);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-    {
-        perror("Erro ao fazer bind no socket");
-        close(sock);
-        exit(EXIT_FAILURE);
-    }
-    socklen_t client_len = sizeof(addr);
-    getsockname(sock, (struct sockaddr *)&addr, &client_len);
-    printf("Client is using ephemeral port: %d\n", ntohs(addr.sin_port));
-
-    // Configura o socket para enviar pacotes de broadcast
-    int broadcast = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0)
-    {
-        perror("Erro ao configurar socket para broadcast");
-        close(sock);
-        exit(EXIT_FAILURE);
-    }
-
-    // Descoberta do servidor
-    if (discovery_send_broadcast(sock, port, &servaddr) < 0)
-    {
-        fprintf(stderr, "Falha na descoberta do servidor\n");
+        perror("Erro ao inicializar socket e encontrar servidor\n");
         close(sock);
         exit(EXIT_FAILURE);
     }
@@ -190,4 +155,45 @@ int main(int argc, char *argv[])
     pthread_cancel(tid); // Encerrar a thread interface de maneira segura
     pthread_join(tid, NULL);
     return 0;
+}
+int init_socket_and_find_server(int port)
+{
+    // Cria o socket com domínio AF_INET e tipo SOCK_DGRAM (protocolo UDP)
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
+        perror("Cannot create socket");
+        return -1;
+    }
+
+    // Vincula o socket a um endereço e porta
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(0);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
+        perror("Erro ao fazer bind no socket");
+        return -1;
+    }
+    socklen_t client_len = sizeof(addr);
+    getsockname(sock, (struct sockaddr *)&addr, &client_len);
+    printf("Client is using ephemeral port: %d\n", ntohs(addr.sin_port));
+
+    // Configura o socket para enviar pacotes de broadcast
+    int broadcast = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0)
+    {
+        perror("Erro ao configurar socket para broadcast");
+        return -1;
+    }
+
+    // Descoberta do servidor
+    if (discovery_send_broadcast(sock, port, &servaddr) < 0)
+    {
+        fprintf(stderr, "Falha na descoberta do servidor\n");
+        return -1;
+    }
+
+    return sock;
 }
