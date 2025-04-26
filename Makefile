@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-Wall -pthread
-LIB_OBJS=discovery.o
+LIB_OBJS=discovery.o utils.o
 
 all: servidor cliente
 
@@ -12,6 +12,9 @@ cliente: cliente.c cliente.h $(LIB_OBJS)
 
 discovery.o: discovery.c discovery.h
 	$(CC) $(CFLAGS) -c discovery.c
+
+utils.o: utils.c utils.h
+	$(CC) $(CFLAGS) -c utils.c
 
 clean:
 	rm -f servidor cliente *.o

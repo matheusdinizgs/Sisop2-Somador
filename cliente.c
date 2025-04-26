@@ -1,49 +1,12 @@
 #define _POSIX_C_SOURCE 199309L
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
 #include <pthread.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "discovery.h"
 #include "cliente.h"
-
-#define PORT 4000
-#define MAX_BUFFER 1024
-#define PACKET_TYPE_REQ 2
-#define PACKET_TYPE_REQ_ACK 4
-#define MAX_HISTORY 100000000
-
-struct requisicao
-{
-    uint32_t value;
-};
-
-struct requisicao_ack
-{
-    uint32_t seqn;
-    uint32_t num_reqs;
-    uint64_t total_sum;
-};
-
-typedef struct __packet
-{
-    uint16_t type;
-    uint32_t seqn;
-    union
-    {
-        struct requisicao req;
-        struct requisicao_ack ack;
-    } data;
-} packet;
+#include "utils.h"
 
 uint32_t valores_enviados[MAX_HISTORY] = {0};
 int sock;
@@ -55,12 +18,6 @@ uint32_t seqn = 1;
 pthread_mutex_t ack_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t ack_cond = PTHREAD_COND_INITIALIZER;
 int ack_recebido = 0;
-
-void current_time(char *buf, size_t len)
-{
-    time_t now = time(NULL);
-    strftime(buf, len, "%Y-%m-%d %H:%M:%S", localtime(&now));
-}
 
 void *interface_thread(void *arg)
 {
@@ -86,6 +43,48 @@ void *interface_thread(void *arg)
         }
     }
     return NULL;
+}
+
+int init_socket_and_find_server(int port)
+{
+    // Cria o socket com domínio AF_INET e tipo SOCK_DGRAM (protocolo UDP)
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
+        perror("Cannot create socket");
+        return -1;
+    }
+
+    // Vincula o socket a um endereço e porta
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(0);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
+        perror("Erro ao fazer bind no socket");
+        return -1;
+    }
+    socklen_t client_len = sizeof(addr);
+    getsockname(sock, (struct sockaddr *)&addr, &client_len);
+    printf("Client is using ephemeral port: %d\n", ntohs(addr.sin_port));
+
+    // Configura o socket para enviar pacotes de broadcast
+    int broadcast = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0)
+    {
+        perror("Erro ao configurar socket para broadcast");
+        return -1;
+    }
+
+    // Descoberta do servidor
+    if (discovery_send_broadcast(sock, port, &servaddr) < 0)
+    {
+        fprintf(stderr, "Falha na descoberta do servidor\n");
+        return -1;
+    }
+
+    return sock;
 }
 
 int main(int argc, char *argv[])
@@ -155,45 +154,4 @@ int main(int argc, char *argv[])
     pthread_cancel(tid); // Encerrar a thread interface de maneira segura
     pthread_join(tid, NULL);
     return 0;
-}
-int init_socket_and_find_server(int port)
-{
-    // Cria o socket com domínio AF_INET e tipo SOCK_DGRAM (protocolo UDP)
-    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
-    {
-        perror("Cannot create socket");
-        return -1;
-    }
-
-    // Vincula o socket a um endereço e porta
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(0);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-    {
-        perror("Erro ao fazer bind no socket");
-        return -1;
-    }
-    socklen_t client_len = sizeof(addr);
-    getsockname(sock, (struct sockaddr *)&addr, &client_len);
-    printf("Client is using ephemeral port: %d\n", ntohs(addr.sin_port));
-
-    // Configura o socket para enviar pacotes de broadcast
-    int broadcast = 1;
-    if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0)
-    {
-        perror("Erro ao configurar socket para broadcast");
-        return -1;
-    }
-
-    // Descoberta do servidor
-    if (discovery_send_broadcast(sock, port, &servaddr) < 0)
-    {
-        fprintf(stderr, "Falha na descoberta do servidor\n");
-        return -1;
-    }
-
-    return sock;
 }
