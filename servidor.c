@@ -153,7 +153,19 @@ int main(int argc, char *argv[]) {
         recvfrom(sock, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliaddr, &len);
 
         if (pkt.type == PACKET_TYPE_DISCOVERY) {
-            discovery_handle_request(sock, &cliaddr, len, (discovery_packet *)&pkt);
+            discovery_packet *req = (discovery_packet *)&pkt;
+            discovery_packet resp = {
+                .type = PACKET_TYPE_DISCOVERY_ACK,
+                .client_id = req->client_id};
+
+            printf("ACK packet: type=%d, client_id=%u\n", resp.type, resp.client_id);
+            printf("Enviando ACK de descoberta para %s:%d\n",
+                   inet_ntoa(cliaddr.sin_addr), ntohs(cliaddr.sin_port));
+
+            // Envia a resposta ao cliente
+            if (sendto(sock, &resp, sizeof(resp), 0, (struct sockaddr *)&cliaddr, len) < 0) {
+                perror("Erro ao enviar resposta de descoberta");
+            }
         } else if (pkt.type == PACKET_TYPE_REQ) {
             pthread_t tid;
             void *ctx = malloc(sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
