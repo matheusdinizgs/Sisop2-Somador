@@ -105,6 +105,22 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    // Vincula o socket a um endereço e porta
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(0);
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
+        perror("Erro ao fazer bind no socket");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+    socklen_t client_len = sizeof(addr);
+    getsockname(sock, (struct sockaddr *)&addr, &client_len);
+    printf("Client is using ephemeral port: %d\n", ntohs(addr.sin_port));
+
     // Configura o socket para enviar pacotes de broadcast
     int broadcast = 1;
     if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0)
