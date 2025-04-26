@@ -1,45 +1,25 @@
+#include "servidor.h"
+
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
+
+#include "discovery.h"
+#include "utils.h"
 
 #define PORT 4000
 #define MAX_CLIENTS 100
-#define MAX_BUFFER 1024
-#define PACKET_TYPE_DESC 1
 #define PACKET_TYPE_REQ 2
-#define PACKET_TYPE_DESC_ACK 3
 #define PACKET_TYPE_REQ_ACK 4
-
-struct requisicao {
-    uint32_t value;
-};
-
-struct requisicao_ack {
-    uint32_t seqn;
-    uint32_t num_reqs;
-    uint64_t total_sum;
-};
-
-typedef struct __packet {
-    uint16_t type;
-    uint32_t seqn;
-    union {
-        struct requisicao req;
-        struct requisicao_ack ack;
-    } data;
-} packet;
-
-typedef struct {
-    struct sockaddr_in addr;
-    uint32_t last_req;
-    uint64_t last_sum;
-} client_entry;
 
 client_entry clients[MAX_CLIENTS];
 int client_count = 0;
@@ -49,7 +29,8 @@ pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 int find_or_add_client(struct sockaddr_in *addr) {
     for (int i = 0; i < client_count; i++) {
-        if (clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr) return i;
+        if (clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr)
+            return i;
     }
     clients[client_count].addr = *addr;
     clients[client_count].last_req = 0;
@@ -57,13 +38,9 @@ int find_or_add_client(struct sockaddr_in *addr) {
     return client_count++;
 }
 
-void current_time(char *buf, size_t len) {
-    time_t now = time(NULL);
-    strftime(buf, len, "%Y-%m-%d %H:%M:%S", localtime(&now));
-}
-
 void *handle_request(void *arg) {
-    struct {
+    struct
+    {
         packet pkt;
         struct sockaddr_in addr;
         socklen_t addrlen;
@@ -111,13 +88,30 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    // Pega a porta do argumento
     int port = atoi(argv[1]);
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in servaddr = {.sin_family = AF_INET,
-                                   .sin_addr.s_addr = INADDR_ANY,
-                                   .sin_port = htons(port)};
 
-    bind(sock, (struct sockaddr *)&servaddr, sizeof(servaddr));
+    // Cria o socket com domínio AF_INET e tipo SOCK_DGRAM (protocolo UDP)
+    int sock;
+    if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+        perror("Cannot ceate socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Cria o container genérico que permite que o SO identifique a família do endereço
+    struct sockaddr_in servaddr;
+    memset((char *)&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;                 // IPv4
+    servaddr.sin_port = htons(port);               // Porta do servidor
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);  // Aceita qualquer endereço
+    bzero(&(servaddr.sin_zero), 8);
+
+    // Vincular o socket à porta
+    if (bind(sock, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        perror("Cannot bind socket");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
 
     char timebuf[64];
     current_time(timebuf, sizeof(timebuf));
@@ -130,12 +124,8 @@ int main(int argc, char *argv[]) {
 
         recvfrom(sock, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliaddr, &len);
 
-        if (pkt.type == PACKET_TYPE_DESC) {
-            packet resp = {.type = PACKET_TYPE_DESC_ACK};
-            sendto(sock, &resp, sizeof(resp), 0, (struct sockaddr *)&cliaddr, len);
-            pthread_mutex_lock(&lock);
-            find_or_add_client(&cliaddr);
-            pthread_mutex_unlock(&lock);
+        if (pkt.type == PACKET_TYPE_DISCOVERY) {
+            discovery_handle_request(sock, &cliaddr, len, (discovery_packet *)&pkt);
         } else if (pkt.type == PACKET_TYPE_REQ) {
             pthread_t tid;
             void *ctx = malloc(sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
