@@ -1,5 +1,8 @@
+# Ignorar todos os arquivos .txt
 *.txt
-*.o
+
+# Ignorar todos os arquivos .exe
 *.exe
-servidor
-cliente
+
+# Ignorar todos os arquivos .o
+*.o

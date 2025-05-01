@@ -31,7 +31,8 @@ int find_or_add_client(struct sockaddr_in *addr)
 {
     for (int i = 0; i < client_count; i++)
     {
-        if (clients[i].addr.sin_port == addr->sin_port)
+        if (clients[i].addr.sin_port == addr->sin_port &&
+            clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr)
             return i;
         // if (clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr) return i;
     }
