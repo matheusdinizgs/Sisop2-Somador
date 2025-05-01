@@ -49,7 +49,9 @@ pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 int find_or_add_client(struct sockaddr_in *addr) {
     for (int i = 0; i < client_count; i++) {
-        if (clients[i].addr.sin_port == addr->sin_port) return i;
+        if (clients[i].addr.sin_port == addr->sin_port &&
+            clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr) 
+            return i;
         //if (clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr) return i;
     }
     clients[client_count].addr = *addr;
