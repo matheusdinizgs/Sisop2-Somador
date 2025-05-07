@@ -6,14 +6,17 @@
 #define MAX_NUM  50
 #define MAX_REP  1000000
 
-int main () {
+int main()
+{
   uint64_t sum = 0;
   
   srand(time(NULL));
 
+  FILE *file = fopen("test.txt", "w");
+
   for (int i = 0; i < MAX_REP; i++){
     int num = rand() % MAX_NUM + 1;
-    printf ("%d\n", num);
+    fprintf (file, "%d\n", num);
     sum += num;
   }
 
