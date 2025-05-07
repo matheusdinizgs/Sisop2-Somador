@@ -7,14 +7,13 @@
 
 client_entry clients[MAX_CLIENTS];
 int client_count = 0;
-uint32_t total_reqs = 0;
 uint64_t total_sum = 0;
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+uint32_t total_reqs = 0;
 
 void *handle_request(void *arg)
 {
     request_context *ctx = (request_context *)arg;
-    process_packet(&ctx->pkt, &ctx->addr, ctx->sock, ctx->addrlen);
+    process_packet(&ctx->pkt, &ctx->addr, ctx->sock, ctx->addrlen, ctx->lock);
     free(ctx);
     return NULL;
 }
@@ -28,11 +27,10 @@ void log_request(packet *pkt, struct sockaddr_in *addr, int is_dup)
            pkt->seqn, pkt->data.req.value, total_reqs, total_sum);
 }
 
-void process_packet(packet *pkt, struct sockaddr_in *addr, int sock, socklen_t addrlen)
+void process_packet(packet *pkt, struct sockaddr_in *addr, int sock, socklen_t addrlen, pthread_mutex_t *lock)
 {
-    int idx = find_or_add_client(addr, clients, client_count);
-
     pthread_mutex_lock(&lock);
+    int idx = find_or_add_client(addr, clients, client_count, &lock);
     int is_dup = pkt->seqn != clients[idx].last_req + 1;
 
     if (!is_dup)
@@ -56,7 +54,7 @@ void process_packet(packet *pkt, struct sockaddr_in *addr, int sock, socklen_t a
     pthread_mutex_unlock(&lock);
 }
 
-void maybe_handle_request(packet pkt, struct sockaddr_in cliaddr, socklen_t len, int sock)
+void maybe_handle_request(packet pkt, struct sockaddr_in cliaddr, socklen_t len, int sock, pthread_mutex_t *lock)
 {
     request_context *ctx = malloc(sizeof(request_context));
     if (!ctx)
@@ -64,7 +62,7 @@ void maybe_handle_request(packet pkt, struct sockaddr_in cliaddr, socklen_t len,
         perror("malloc failed");
         return;
     }
-    *ctx = (request_context){pkt, cliaddr, len, sock};
+    *ctx = (request_context){pkt, cliaddr, len, sock, &lock};
 
     pthread_t tid;
     if (pthread_create(&tid, NULL, handle_request, ctx) != 0)

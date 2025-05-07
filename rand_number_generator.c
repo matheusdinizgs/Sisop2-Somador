@@ -4,7 +4,7 @@
 #include <time.h>
 
 #define MAX_NUM  50
-#define MAX_REP  1000000
+#define MAX_REP  10000
 
 int main()
 {

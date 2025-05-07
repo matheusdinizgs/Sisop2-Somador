@@ -14,7 +14,7 @@
 int discovery_send_broadcast(int sock, uint16_t port, struct sockaddr_in *serveraddr, socklen_t addrlen);
 
 // Funções para o servidor
-int discovery_handle_request(int sock, struct sockaddr_in *cliaddr, socklen_t len, client_entry *clients, pthread_mutex_t lock, int client_count);
-int find_or_add_client(struct sockaddr_in *addr, client_entry *clients, int client_count);
-
+int discovery_handle_request(int sock, struct sockaddr_in *cliaddr, socklen_t len, client_entry *clients, int client_count, pthread_mutex_t *lock);
+int find_or_add_client(struct sockaddr_in *addr, client_entry *clients, int client_count, pthread_mutex_t *lock)
+;
 #endif // DISCOVERY_H

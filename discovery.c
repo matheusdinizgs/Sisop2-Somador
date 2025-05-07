@@ -34,7 +34,7 @@ int discovery_send_broadcast(int sock, uint16_t port, struct sockaddr_in *server
 }
 
 // Responde a uma mensagem de descoberta(servidor) void discovery_handle_request(int sock, struct sockaddr_in *cliaddr, socklen_t len, discovery_packet *req)
-int discovery_handle_request(int sock, struct sockaddr_in *cliaddr, socklen_t len, client_entry *clients, pthread_mutex_t lock, int client_count)
+int discovery_handle_request(int sock, struct sockaddr_in *cliaddr, socklen_t len, client_entry *clients, int client_count, pthread_mutex_t *lock)
 {
     packet resp = {.type = PACKET_TYPE_DESC_ACK};
     if (sendto(sock, &resp, sizeof(resp), 0, (struct sockaddr *)cliaddr, len) < 0)
@@ -43,16 +43,14 @@ int discovery_handle_request(int sock, struct sockaddr_in *cliaddr, socklen_t le
         return -1;
     }
 
-    pthread_mutex_lock(&lock);
-    client_count = find_or_add_client(cliaddr, clients, client_count);
-    pthread_mutex_unlock(&lock);
-
+    client_count = find_or_add_client(cliaddr, clients, client_count, lock);
     return client_count;
 }
 
 // Encontra ou adiciona um cliente na lista de clientes
-int find_or_add_client(struct sockaddr_in *addr, client_entry *clients, int client_count)
+int find_or_add_client(struct sockaddr_in *addr, client_entry *clients, int client_count, pthread_mutex_t *lock)
 {
+    pthread_mutex_lock(lock);
     for (int i = 0; i < client_count; i++)
     {
         if (clients[i].addr.sin_port == addr->sin_port &&
@@ -63,4 +61,5 @@ int find_or_add_client(struct sockaddr_in *addr, client_entry *clients, int clie
     clients[client_count].last_req = 0;
     clients[client_count].last_sum = 0;
     return ++client_count;
+    pthread_mutex_unlock(lock);
 }

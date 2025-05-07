@@ -6,6 +6,8 @@
     "discovery.h": "c",
     "time.h": "c",
     "utils.h": "c",
-    "interface.h": "c"
+    "interface.h": "c",
+    "processing.h": "c",
+    "inet.h": "c"
   }
 }

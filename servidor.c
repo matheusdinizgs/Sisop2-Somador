@@ -4,6 +4,8 @@
 #include "discovery.h"
 #include "processing.h"
 
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -27,7 +29,7 @@ int main(int argc, char *argv[])
 
     memset((char *)&servaddr, 0, sizeof(servaddr)); // zera todos os bytes de memoria de servadrr
     // garante que nao fique lixo de memoria antigo
-    // evita bugs difíceis de achar em sockets, memória de rede, etc. Assim você pode preencher apenas os campos que precisa, com segurança.
+    // evita bugs difíceis de achar em sockets, memória de rede, etc.
 
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -53,11 +55,11 @@ int main(int argc, char *argv[])
 
         if (pkt.type == PACKET_TYPE_DESC)
         {
-            client_count = discovery_handle_request(sock, &cliaddr, len, clients, lock, client_count);
+            client_count = discovery_handle_request(sock, &cliaddr, len, clients, client_count, &lock);
         }
         else if (pkt.type == PACKET_TYPE_REQ)
         {
-            maybe_handle_request(pkt, cliaddr, len, sock);
+            maybe_handle_request(pkt, cliaddr, len, sock, &lock);
         }
     }
     close(sock);
