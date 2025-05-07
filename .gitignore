@@ -6,3 +6,6 @@
 
 # Ignorar todos os arquivos .o
 *.o
+
+cliente
+servidor

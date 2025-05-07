@@ -2,6 +2,15 @@
 #include <stdio.h>
 #include <netinet/in.h>
 
+#define PORT 4000
+#define PACKET_TYPE_DESC 1
+#define PACKET_TYPE_REQ 2
+#define PACKET_TYPE_DESC_ACK 3
+#define PACKET_TYPE_REQ_ACK 4
+#define MAX_HISTORY 100000000
+#define MAX_BUFFER 1024
+#define MAX_CLIENTS 100
+
 struct requisicao
 {
     uint32_t value; // Valor da requsição

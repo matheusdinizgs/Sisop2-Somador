@@ -5,7 +5,7 @@
       "label": "build cliente",
       "type": "shell",
       "command": "gcc",
-      "args": ["-g", "cliente.c", "discovery.c", "-o", "cliente"],
+      "args": ["-g", "cliente.c", "discovery.c", "utils.c", "interface.c", "-o", "cliente"],
       "group": {
         "kind": "build",
         "isDefault": true
@@ -15,7 +15,7 @@
       "label": "build servidor",
       "type": "shell",
       "command": "gcc",
-      "args": ["-g", "servidor.c", "discovery.c", "-o", "servidor"],
+      "args": ["-g", "servidor.c", "discovery.c", "processing.c", "utils.c", "-o", "servidor"],
       "group": {
         "kind": "build",
         "isDefault": true

@@ -1,94 +1,8 @@
-#include "servidor.h"
-
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <pthread.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
-
 #include "discovery.h"
-#include "utils.h"
-
-#define PORT 4000
-#define MAX_CLIENTS 100
-#define PACKET_TYPE_REQ 2
-#define PACKET_TYPE_REQ_ACK 4
-
-client_entry clients[MAX_CLIENTS];
-int client_count = 0;
-uint32_t total_reqs = 0;
-uint64_t total_sum = 0;
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-
-int find_or_add_client(struct sockaddr_in *addr)
-{
-    for (int i = 0; i < client_count; i++)
-    {
-        if (clients[i].addr.sin_port == addr->sin_port &&
-            clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr)
-            return i;
-        // if (clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr) return i;
-    }
-    clients[client_count].addr = *addr;
-    clients[client_count].last_req = 0;
-    clients[client_count].last_sum = 0;
-    return client_count++;
-}
-
-void *handle_request(void *arg)
-{ // recebe pacote como argumento
-    struct
-    {
-        packet pkt;
-        struct sockaddr_in addr;
-        socklen_t addrlen;
-        int sock;
-    } *ctx = arg;
-
-    packet *pkt = &ctx->pkt;
-    char timebuf[64];
-    int idx = find_or_add_client(&ctx->addr);
-
-    pthread_mutex_lock(&lock);
-    if (pkt->seqn == clients[idx].last_req + 1)
-    { // confirma se o numero de identificação da msg recebida é o proximo esperado
-        total_reqs++;
-        total_sum += pkt->data.req.value;
-        clients[idx].last_req = pkt->seqn;
-        clients[idx].last_sum = total_sum;
-        current_time(timebuf, sizeof(timebuf));
-        printf("%s client %s id_req %u value %u num_reqs %u total_sum %lu\n",
-               timebuf, inet_ntoa(ctx->addr.sin_addr), pkt->seqn,
-               pkt->data.req.value, total_reqs, total_sum);
-    }
-    else
-    {
-        current_time(timebuf, sizeof(timebuf));
-        printf("%s client %s DUP!! id_req %u value %u num_reqs %u total_sum %lu\n",
-               timebuf, inet_ntoa(ctx->addr.sin_addr), pkt->seqn,
-               pkt->data.req.value, total_reqs, total_sum);
-    }
-
-    packet ack = {
-        .type = PACKET_TYPE_REQ_ACK,
-        .seqn = clients[idx].last_req,
-    };
-    ack.data.ack.num_reqs = total_reqs;
-    ack.data.ack.total_sum = clients[idx].last_sum;
-    sendto(ctx->sock, &ack, sizeof(ack), 0,
-           (struct sockaddr *)&ctx->addr, ctx->addrlen);
-    pthread_mutex_unlock(&lock);
-
-    free(ctx);
-    return NULL;
-}
+#include "processing.h"
 
 int main(int argc, char *argv[])
 {
@@ -98,7 +12,6 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Pega a porta do argumento
     int port = atoi(argv[1]);
 
     int sock;
@@ -138,17 +51,13 @@ int main(int argc, char *argv[])
 
         recvfrom(sock, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliaddr, &len);
 
-        if (pkt.type == PACKET_TYPE_DISCOVERY)
+        if (pkt.type == PACKET_TYPE_DESC)
         {
-            discovery_handle_request(sock, &cliaddr, len, (discovery_packet *)&pkt);
+            client_count = discovery_handle_request(sock, &cliaddr, len, clients, lock, client_count);
         }
         else if (pkt.type == PACKET_TYPE_REQ)
         {
-            pthread_t tid;
-            void *ctx = malloc(sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
-            memcpy(ctx, &(struct { packet pkt; struct sockaddr_in addr; socklen_t addrlen; int sock; }){pkt, cliaddr, len, sock}, sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
-            pthread_create(&tid, NULL, handle_request, ctx);
-            pthread_detach(tid);
+            maybe_handle_request(pkt, cliaddr, len, sock);
         }
     }
     close(sock);

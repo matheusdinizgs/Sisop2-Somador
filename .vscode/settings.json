@@ -1,5 +1,11 @@
 {
   "files.associations": {
-    "unistd.h": "c"
+    "teste.c": "teste",
+    "unistd.h": "c",
+    "pthread.h": "c",
+    "discovery.h": "c",
+    "time.h": "c",
+    "utils.h": "c",
+    "interface.h": "c"
   }
 }
