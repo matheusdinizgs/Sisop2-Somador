@@ -26,14 +26,14 @@ int initServer(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddr.sin_port = htons(port);
-    
     // Fills all memory bytes with zero in serverAddr
     // Ensures no leftover memory garbage
     // Prevents hard-to-find bugs in sockets, network memory, etc. This way, you can safely fill only the fields you need.
     memset((char *)&serverAddr, 0, sizeof(serverAddr)); 
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serverAddr.sin_port = htons(port);
+    
     
     if (bind(socketNumber, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
         perror("Error binding socket");

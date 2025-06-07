@@ -62,11 +62,6 @@ int find_or_add_client(struct sockaddr_in *addr) {
     return client_count++;
 }
 
-// void current_time(char *buf, size_t len) {
-//     time_t now = time(NULL);
-//     strftime(buf, len, "%Y-%m-%d %H:%M:%S", localtime(&now));
-// }
-
 void *handle_request(void *arg) { //recebe pacote como argumento
     struct {
         packet pkt;
@@ -112,33 +107,33 @@ void *handle_request(void *arg) { //recebe pacote como argumento
 
 int main(int argc, char* argv[]) {
     
-    const int timeBufSize = 64;
+    const size_t timeBufSize = 64;
     char timebuf[timeBufSize];
-    
-    int sockerNumber = initServer(argc, argv);
-    getInitServerState(timebuf, timeBufSize);
+
+    int socketNumber = initServer(argc, argv);
+    getInitServerState(timebuf, timeBufSize); 
 
     while (1) {
         packet pkt;
         struct sockaddr_in cliaddr;
         socklen_t len = sizeof(cliaddr);
 
-        recvfrom(sockerNumber, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliaddr, &len);
+        recvfrom(socketNumber, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliaddr, &len);
 
         if (pkt.type == PACKET_TYPE_DESC) {
             packet resp = {.type = PACKET_TYPE_DESC_ACK};
-            sendto(sockerNumber, &resp, sizeof(resp), 0, (struct sockaddr *)&cliaddr, len);
+            sendto(socketNumber, &resp, sizeof(resp), 0, (struct sockaddr *)&cliaddr, len);
             pthread_mutex_lock(&lock);
             find_or_add_client(&cliaddr);
             pthread_mutex_unlock(&lock);
         } else if (pkt.type == PACKET_TYPE_REQ) {
             pthread_t tid;
             void *ctx = malloc(sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
-            memcpy(ctx, &(struct { packet pkt; struct sockaddr_in addr; socklen_t addrlen; int sock; }){pkt, cliaddr, len, sockerNumber}, sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
+            memcpy(ctx, &(struct { packet pkt; struct sockaddr_in addr; socklen_t addrlen; int sock; }){pkt, cliaddr, len, socketNumber}, sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
             pthread_create(&tid, NULL, handle_request, ctx);
             pthread_detach(tid);
         }
     }
-    close(sockerNumber);
+    close(socketNumber);
     return 0;
 }
