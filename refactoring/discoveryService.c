@@ -1,8 +1,6 @@
 #include "discoveryService.h"
 
-void initServer(int argc, char *argv[]) {
-    
-    //printf("Starting server...\n");
+int initServer(int argc, char *argv[]) {
 
     int numParameters = argc - 1; // Exclude the program name from the count
     int port = 0;
@@ -18,8 +16,8 @@ void initServer(int argc, char *argv[]) {
 
     port = atoi(argv[1]);
 
-    if (port <= 0 || port > 65535) {
-        fprintf(stderr, "Error: Invalid port number. It must be between 1 and 65535.\n");
+    if (port != PORT) {
+        fprintf(stderr, "Error: Invalid port number. It must be %d}.\n", PORT);
         exit(EXIT_FAILURE);
     }
 
@@ -43,7 +41,15 @@ void initServer(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    //printf("Server initialized on port %d. SocketNumber: %d\n", port, socketNumber);
+    return socketNumber;
+}
+
+void endServer(int socketNumber) {
+    
+    if (close(socketNumber) < 0) {
+        perror("Error closing socket");
+        exit(EXIT_FAILURE);
+    }
 }
 
 void initClient(int argc, char *argv[]) {

@@ -1,16 +1,18 @@
-all: server_testing server_testing_debug
+DEPENDENCIES = discoveryService.c discoveryService.h interfaceService.h interfaceService.c
 
-server_testing: server_testing.c discoveryService.c discoveryService.h
-	gcc -Wall -pthread server_testing.c discoveryService.c -o server_testing
+all: server_testing client_testing
 
-server_testing_debug: server_testing.c discoveryService.c discoveryService.h
-	gcc -Wall -g -O0 -pthread server_testing.c discoveryService.c -o server_testing_debug
+server_testing: server_testing.c ${DEPENDENCIES}
+	gcc -Wall -pthread server_testing.c discoveryService.c interfaceService.c -o server_testing 
+
+client_testing: client_testing.c #${DEPENDENCIES}
+	gcc -Wall -pthread client_testing.c -o client_testing
 
 run_server_testing: server_testing
 	./server_testing 4000
 
-run_server_testing_debug: server_testing_debug
-	./server_testing 4000
+run_client_testing: client_testing
+	./client_testing 4000	
 
 clean:
-	rm -f server_testing server_testing_debug
+	rm -f server_testing client_testing

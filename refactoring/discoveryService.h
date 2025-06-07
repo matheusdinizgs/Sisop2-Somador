@@ -7,7 +7,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#define PORT 4000
 
-void initServer(int argc, char *argv[]);
+int initServer(int argc, char *argv[]);
+
+void endServer(int socketNumber);
 
 #endif // discoveryService_h
