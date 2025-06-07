@@ -3,3 +3,7 @@
 
 # Ignorar todos os arquivos .exe
 *.exe
+
+*.o
+
+.vscode/
