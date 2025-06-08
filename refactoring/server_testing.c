@@ -10,9 +10,7 @@
 #include "discoveryService.h"
 #include "interfaceService.h"
 
-#define PORT 4000
 #define MAX_CLIENTS 100
-#define MAX_BUFFER 1024
 #define PACKET_TYPE_DESC 1
 #define PACKET_TYPE_REQ 2
 #define PACKET_TYPE_DESC_ACK 3
@@ -107,6 +105,11 @@ void *handle_request(void *arg) { //recebe pacote como argumento
 
 int main(int argc, char* argv[]) {
     
+    packet pkt;
+    packet resp = {.type = PACKET_TYPE_DESC_ACK};
+    struct sockaddr_in cliaddr;
+    socklen_t len = sizeof(cliaddr);
+    pthread_t tid;
     const size_t timeBufSize = 64;
     char timebuf[timeBufSize];
 
@@ -114,26 +117,25 @@ int main(int argc, char* argv[]) {
     getInitServerState(timebuf, timeBufSize); 
 
     while (1) {
-        packet pkt;
-        struct sockaddr_in cliaddr;
-        socklen_t len = sizeof(cliaddr);
-
+        
         recvfrom(socketNumber, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliaddr, &len);
 
         if (pkt.type == PACKET_TYPE_DESC) {
-            packet resp = {.type = PACKET_TYPE_DESC_ACK};
+            
             sendto(socketNumber, &resp, sizeof(resp), 0, (struct sockaddr *)&cliaddr, len);
             pthread_mutex_lock(&lock);
             find_or_add_client(&cliaddr);
             pthread_mutex_unlock(&lock);
+
         } else if (pkt.type == PACKET_TYPE_REQ) {
-            pthread_t tid;
+            
             void *ctx = malloc(sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
             memcpy(ctx, &(struct { packet pkt; struct sockaddr_in addr; socklen_t addrlen; int sock; }){pkt, cliaddr, len, socketNumber}, sizeof(packet) + sizeof(cliaddr) + sizeof(socklen_t) + sizeof(int));
             pthread_create(&tid, NULL, handle_request, ctx);
             pthread_detach(tid);
         }
     }
-    close(socketNumber);
+    
+    endServer(socketNumber);
     return 0;
 }
