@@ -38,21 +38,22 @@ int main(int argc, char* argv[]) {
             // Send a discovery acknowledgement to the client
             sendto(socketNumber, &resp, sizeof(resp), 0, (struct sockaddr *)&cliAddr, len);
             
-            pthread_mutex_lock(&state.lock);
             
             // Add the client to the list of known clients
             find_or_add_client(&state, &cliAddr);
-            pthread_mutex_unlock(&state.lock);
 
         // Handle request packets
         } else if (pkt.type == PACKET_TYPE_REQ) {
             
-            void *ctx = malloc(sizeof(packet) + sizeof(cliAddr) + sizeof(socklen_t) + sizeof(int) + sizeof(server_state *));
-            
-            // Copy the packet, client address, and server state to the context
-            memcpy(ctx, 
-                &(struct { packet pkt; struct sockaddr_in addr; socklen_t addrlen; int sock; server_state *state; }){pkt, cliAddr, len, socketNumber, &state}, 
-                sizeof(packet) + sizeof(cliAddr) + sizeof(socklen_t) + sizeof(int) + sizeof(server_state *));
+            // Allocate memory for the request context
+            request_context *ctx = malloc(sizeof(request_context));
+            ctx->pkt = pkt;
+            ctx->addr = cliAddr;
+            ctx->addrlen = len;
+            ctx->sock = socketNumber;
+            ctx->state = &state;
+
+            // Create a new thread to handle the request
             pthread_create(&tid, NULL, handle_request, ctx);
             pthread_detach(tid);
         }

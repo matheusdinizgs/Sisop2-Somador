@@ -12,6 +12,14 @@ typedef struct {
     pthread_mutex_t lock;
 } server_state;
 
+typedef struct {
+    packet pkt;
+    struct sockaddr_in addr;
+    socklen_t addrlen;
+    int sock;
+    server_state *state;
+} request_context;
+
 void init_server_state(server_state *state);
 int find_or_add_client(server_state *state, struct sockaddr_in *addr);
 void *handle_request(void *arg);

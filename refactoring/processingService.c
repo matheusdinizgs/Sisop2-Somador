@@ -13,25 +13,24 @@ void init_server_state(server_state *state) {
 }
 
 int find_or_add_client(server_state *state, struct sockaddr_in *addr) {
+    pthread_mutex_lock(&state->lock);
     for (int i = 0; i < state->client_count; i++) {
         if (state->clients[i].addr.sin_port == addr->sin_port &&
-            state->clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr) 
+            state->clients[i].addr.sin_addr.s_addr == addr->sin_addr.s_addr) {
+            pthread_mutex_unlock(&state->lock);
             return i;
+        }
     }
     state->clients[state->client_count].addr = *addr;
     state->clients[state->client_count].last_req = 0;
     state->clients[state->client_count].last_sum = 0;
-    return state->client_count++;
+    int new_client_idx = state->client_count++;
+    pthread_mutex_unlock(&state->lock);
+    return new_client_idx;
 }
 
 void *handle_request(void *arg) {
-    struct {
-        packet pkt;
-        struct sockaddr_in addr;
-        socklen_t addrlen;
-        int sock;
-        server_state *state;
-    } *ctx = arg;
+    request_context *ctx = (request_context *)arg;
 
     packet *pkt = &ctx->pkt;
     char timebuf[64];
@@ -43,9 +42,9 @@ void *handle_request(void *arg) {
         ctx->state->total_sum += pkt->data.req.value;
         ctx->state->clients[idx].last_req = pkt->seqn;
         ctx->state->clients[idx].last_sum = ctx->state->total_sum;
-        getServerState(timebuf, inet_ntoa(ctx->addr.sin_addr), pkt->seqn, pkt->data.req.value, ctx->state);
+        print_server_state(timebuf, inet_ntoa(ctx->addr.sin_addr), pkt->seqn, pkt->data.req.value, ctx->state, 0);
     } else {
-        getServerDupState(timebuf, inet_ntoa(ctx->addr.sin_addr), pkt->seqn, pkt->data.req.value, ctx->state);
+        print_server_state(timebuf, inet_ntoa(ctx->addr.sin_addr), pkt->seqn, pkt->data.req.value, ctx->state, 1);
     }
 
     packet ack = {

@@ -8,17 +8,12 @@
 
 void current_time(char *timeBuf, size_t len);
 
-void getServerState(char *timeBuf,
+void print_server_state(char *timeBuf,
                         const char *clientAddr,
                         uint32_t seqn,
                         uint32_t value,
-                        server_state *state);
-
-void getServerDupState(char *timeBuf,
-                        const char *clientAddr,
-                        uint32_t seqn,
-                        uint32_t value,
-                        server_state *state);
+                        server_state *state,
+                        int is_duplicate);
 
 void getInitServerState(char *timeBuf, size_t len);                        
 
