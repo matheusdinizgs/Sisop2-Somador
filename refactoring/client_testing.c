@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 199309L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -10,33 +12,11 @@
 #include <sys/time.h>
 #include <time.h>
 //#include <bits/time.h>
+#include "common.h"
+#include "interfaceService.h"
 
-#define PORT 4000
 #define MAX_BUFFER 1024
-#define PACKET_TYPE_DESC 1
-#define PACKET_TYPE_REQ 2
-#define PACKET_TYPE_DESC_ACK 3
-#define PACKET_TYPE_REQ_ACK 4
 #define MAX_HISTORY 100000000
-
-struct requisicao {
-    uint32_t value;
-};
-
-struct requisicao_ack {
-    uint32_t seqn;
-    uint32_t num_reqs;
-    uint64_t total_sum;
-};
-
-typedef struct __packet {
-    uint16_t type;
-    uint32_t seqn;
-    union {
-        struct requisicao req;
-        struct requisicao_ack ack;
-    } data;
-} packet;
 
 uint32_t valores_enviados[MAX_HISTORY] = {0};
 int sock;
@@ -47,33 +27,6 @@ uint32_t seqn = 1;
 pthread_mutex_t ack_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t ack_cond = PTHREAD_COND_INITIALIZER;
 int ack_recebido = 0;
-
-void current_time(char *buf, size_t len) {
-    time_t now = time(NULL);
-    strftime(buf, len, "%Y-%m-%d %H:%M:%S", localtime(&now));
-}
-
-void *interface_thread(void *arg) {
-    while (1) {
-        packet ack;
-        ssize_t len = recvfrom(sock, &ack, sizeof(ack), 0, NULL, NULL);
-        if (len > 0 && ack.type == PACKET_TYPE_REQ_ACK) {
-            pthread_mutex_lock(&ack_lock);
-            if (ack.seqn == seqn) {
-                char timebuf[64];
-                current_time(timebuf, sizeof(timebuf));
-                uint32_t value = valores_enviados[ack.seqn];
-                printf("%s server %s id_req %u value %u num_reqs %u total_sum %lu\n",
-                    timebuf, inet_ntoa(serveraddr.sin_addr), ack.seqn, value, ack.data.ack.num_reqs,
-                        ack.data.ack.total_sum);
-                ack_recebido = 1;
-                pthread_cond_signal(&ack_cond);
-            }
-            pthread_mutex_unlock(&ack_lock);
-        }
-    }
-    return NULL;
-}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -101,8 +54,20 @@ int main(int argc, char *argv[]) {
     current_time(timebuf, sizeof(timebuf));
     printf("%s server_addr %s\n", timebuf, inet_ntoa(serveraddr.sin_addr));
 
+    // Create client context for the interface thread
+    client_context_t ctx = {
+        .sock = sock,
+        .serveraddr = serveraddr,
+        .addrlen = addrlen,
+        .seqn_ptr = &seqn,
+        .valores_enviados = valores_enviados,
+        .ack_lock = &ack_lock,
+        .ack_cond = &ack_cond,
+        .ack_recebido_ptr = &ack_recebido
+    };
+
     pthread_t tid;
-    pthread_create(&tid, NULL, interface_thread, NULL);
+    pthread_create(&tid, NULL, client_interface_thread, &ctx);
 
     while (1) {
         uint32_t value;
