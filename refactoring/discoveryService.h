@@ -15,6 +15,6 @@ int initServer(int argc, char *argv[]);
 
 void endServer(int socketNumber);
 
-int initClient(int argc, char *argv[]);
+int initClient(int port, int *sock, struct sockaddr_in *serveraddr, socklen_t *addrlen);
 
 #endif // discoveryService_h

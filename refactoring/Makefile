@@ -5,8 +5,8 @@ all: server_testing client_testing
 server_testing: server_testing.c ${DEPENDENCIES} 
 	gcc -Wall -pthread -o server_testing server_testing.c discoveryService.c interfaceService.c processingService.c
 
-client_testing: client_testing.c interfaceService.c interfaceService.h common.h
-	gcc -Wall -pthread -o client_testing client_testing.c interfaceService.c
+client_testing: client_testing.c interfaceService.c interfaceService.h common.h discoveryService.c
+	gcc -Wall -pthread -o client_testing client_testing.c interfaceService.c discoveryService.c
 
 run_server_testing: server_testing
 	./server_testing 4000

@@ -3,15 +3,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-// Global variables from client_testing.c that need to be accessed by client_interface_thread
-extern uint32_t valores_enviados[];
-extern int sock;
-extern struct sockaddr_in serveraddr;
-extern uint32_t seqn;
-extern pthread_mutex_t ack_lock;
-extern pthread_cond_t ack_cond;
-extern int ack_recebido;
-
 void current_time(char *buf, size_t len) {
 
     time_t now = time(NULL);
@@ -67,5 +58,43 @@ void print_client_server_addr(const char *server_addr_str) {
     char timebuf[64];
     current_time(timebuf, sizeof(timebuf));
     printf("%s server_addr %s\n", timebuf, server_addr_str);
+}
+
+void client_send_loop(client_context_t *ctx) {
+    while (1) {
+        uint32_t value;
+        if (scanf("%u", &value) != 1) break;
+
+        ctx->valores_enviados[*(ctx->seqn_ptr)] = value;
+
+        packet req = {
+            .type = PACKET_TYPE_REQ,
+            .seqn = *(ctx->seqn_ptr),
+        };
+        req.data.req.value = value;
+
+        pthread_mutex_lock(ctx->ack_lock);
+        *(ctx->ack_recebido_ptr) = 0;
+        sendto(ctx->sock, &req, sizeof(req), 0, (struct sockaddr *)&(ctx->serveraddr), ctx->addrlen);
+        
+        while (!*(ctx->ack_recebido_ptr)) {
+            struct timespec timeout;
+            clock_gettime(CLOCK_REALTIME, &timeout);
+            timeout.tv_nsec += 10000000; // 10ms = 10.000.000ns
+            if (timeout.tv_nsec >= 1000000000) {
+                timeout.tv_nsec -= 1000000000;
+                timeout.tv_sec++;
+            }
+        
+            pthread_cond_timedwait(ctx->ack_cond, ctx->ack_lock, &timeout);
+        
+            if (!*(ctx->ack_recebido_ptr)) {
+                // p/ reenviar a requisição
+                sendto(ctx->sock, &req, sizeof(req), 0, (struct sockaddr *)&(ctx->serveraddr), ctx->addrlen);
+            }
+        }
+        pthread_mutex_unlock(ctx->ack_lock);
+        (*(ctx->seqn_ptr))++;
+    }
 }
 

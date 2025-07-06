@@ -22,6 +22,7 @@ typedef struct {
 } client_context_t;
 
 void *client_interface_thread(void *arg);
+void client_send_loop(client_context_t *ctx);
 void print_client_server_addr(const char *server_addr_str);
 
 // Server-side interface functions
