@@ -16,20 +16,19 @@ void getServerState(char *timeBuf,
                     const char *clientAddr,
                     uint32_t seqn,
                     uint32_t value,
-                    uint32_t totalReqs,
-                    uint64_t totalSum) {
+                    server_state *state) {
     current_time(timeBuf, sizeof(timeBuf));
     printf("%s client %s id_req %u value %u num_reqs %u total_sum %lu\n",
-           timeBuf, clientAddr, seqn, value, totalReqs, totalSum);
+           timeBuf, clientAddr, seqn, value, state->total_reqs, state->total_sum);
 }
 
 void getServerDupState(char *timeBuf,
                        const char *clientAddr,
                        uint32_t seqn,
                        uint32_t value,
-                       uint32_t totalReqs,
-                       uint64_t totalSum) {
+                       server_state *state) {
     current_time(timeBuf, sizeof(timeBuf));                        
     printf("%s client %s DUP!! id_req %u value %u num_reqs %u total_sum %lu\n",
-           timeBuf, clientAddr, seqn, value, totalReqs, totalSum);
+           timeBuf, clientAddr, seqn, value, state->total_reqs, state->total_sum);
 }
+
