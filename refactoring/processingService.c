@@ -281,7 +281,27 @@ void *manage_server_role_thread(void *arg)
         // NOVO: Eleição inicial com verificação de líder existente
         if (!initial_election_done)
         {
-            // Verifica se já descobriu um líder durante o período de espera
+            // NOVO: Primeiro, tenta descobrir servidores existentes
+            printf("%s Server (ID: %u): Enviando descoberta de servidores...\n", timebuf, state->server_id);
+
+            packet discovery_pkt = {.type = PACKET_TYPE_HEARTBEAT};
+            discovery_pkt.data.server_info.server_id = state->server_id;
+            discovery_pkt.data.server_info.server_addr = self_addr;
+
+            struct sockaddr_in broadcast_addr;
+            memset(&broadcast_addr, 0, sizeof(broadcast_addr));
+            broadcast_addr.sin_family = AF_INET;
+            broadcast_addr.sin_port = htons(PORT);
+            broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+
+            // Envia descoberta
+            sendto(state->sock, &discovery_pkt, sizeof(discovery_pkt), 0,
+                   (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+
+            // Aguarda 2 segundos para descobrir outros servidores
+            sleep(2);
+
+            // Verifica se descobriu algum líder durante a espera
             if (state->current_leader_id != 0 && state->current_leader_id != state->server_id)
             {
                 printf("%s Server (ID: %u): Líder existente (ID: %u) já descoberto. Não iniciando eleição.\n",

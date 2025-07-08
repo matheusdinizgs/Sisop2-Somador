@@ -196,6 +196,12 @@ int main(int argc, char *argv[])
                 printf("Server (ID: %u): Recebeu HEARTBEAT do líder (ID: %u). Atualizando tempo.\n",
                        state.server_id, state.current_leader_id);
             }
+            else
+            {
+                // NOVO: Se receber heartbeat de servidor não-líder durante eleição inicial
+                printf("Server (ID: %u): Recebeu HEARTBEAT de servidor (ID: %u) durante descoberta.\n",
+                       state.server_id, pkt.data.server_info.server_id);
+            }
             pthread_mutex_unlock(&state.leader_lock);
             break;
 
