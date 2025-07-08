@@ -1,14 +1,15 @@
 #ifndef processingService_h
 #define processingService_h
 
-#include "common.h" // Inclua common.h, que agora define a struct server_state COMPLETA
+#include "common.h"  // Inclua common.h, que agora define a struct server_state COMPLETA
 #include <pthread.h> // Ainda necessário para pthread_t, etc.
 
 // NOVO: A struct server_state NÃO é mais definida aqui.
 // Ela é importada do common.h, que agora contém todos os campos
 // para liderança, replicação e gerenciamento de servidores.
 
-typedef struct {
+typedef struct
+{
     packet pkt;
     struct sockaddr_in addr;
     socklen_t addrlen;
@@ -27,5 +28,6 @@ void add_or_update_known_server(server_state *state, uint32_t server_id, struct 
 void *manage_server_role_thread(void *arg);
 
 void *handle_request(void *arg); // Este protótipo já existia, mas sua implementação mudou.
+int get_local_ip_address(struct in_addr *addr);
 
 #endif // processingService_h
