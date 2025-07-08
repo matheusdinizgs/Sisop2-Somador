@@ -186,10 +186,6 @@ int main(int argc, char *argv[])
             // --- NOVOS TIPOS DE PACOTES PARA GERENCIAMENTO DE CLUSTER/ELEIÇÃO ---
 
         case PACKET_TYPE_HEARTBEAT:
-            // Recebido por seguidores do líder.
-            // A thread 'manage_server_role_thread' monitorará isso.
-            // Apenas registra o recebimento e atualiza a last_leader_heartbeat_time no estado.
-            // Bloqueia o mutex do estado de liderança antes de atualizar.
             // Adiciona o servidor remetente à lista de conhecidos
             add_or_update_known_server(&state, pkt.data.server_info.server_id, &pkt.data.server_info.server_addr);
 
@@ -197,6 +193,8 @@ int main(int argc, char *argv[])
             if (pkt.data.server_info.server_id == state.current_leader_id)
             {
                 state.last_leader_heartbeat_time = time(NULL);
+                printf("Server (ID: %u): Recebeu HEARTBEAT do líder (ID: %u). Atualizando tempo.\n",
+                       state.server_id, state.current_leader_id);
             }
             pthread_mutex_unlock(&state.leader_lock);
             break;

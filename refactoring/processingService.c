@@ -349,45 +349,28 @@ void *manage_server_role_thread(void *arg)
             {
                 packet hb_pkt = {.type = PACKET_TYPE_HEARTBEAT};
                 hb_pkt.data.server_info.server_id = state->server_id;
-                hb_pkt.data.server_info.server_addr = self_addr; // O endereço do próprio líder
+                hb_pkt.data.server_info.server_addr = self_addr;
 
-                // Enviar HEARTBEAT para todos os servidores conhecidos (incluindo a si mesmo, mas não é problema)
-                // E também enviar PACKET_TYPE_COORDINATOR por BROADCAST para clientes e outros servidores
+                // NOVO: Enviar HEARTBEAT por BROADCAST em vez de unicast
+                struct sockaddr_in broadcast_addr;
+                memset(&broadcast_addr, 0, sizeof(broadcast_addr));
+                broadcast_addr.sin_family = AF_INET;
+                broadcast_addr.sin_port = htons(PORT);
+                broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
-                // Enviar HEARTBEAT para servidores conhecidos (unicast)
-                pthread_mutex_lock(&state->known_servers_lock);
-                for (int i = 0; i < state->num_known_servers; i++)
-                {
-                    if (state->known_servers[i].id != state->server_id)
-                    { // Não envia heartbeat para si mesmo
-                        sendto(state->sock, &hb_pkt, sizeof(hb_pkt), 0,
-                               (struct sockaddr *)&state->known_servers[i].addr, sizeof(struct sockaddr_in));
-                    }
-                }
-                pthread_mutex_unlock(&state->known_servers_lock);
+                sendto(state->sock, &hb_pkt, sizeof(hb_pkt), 0,
+                       (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
+                printf("%s Server (ID: %u, LÍDER): Enviou HEARTBEAT por broadcast.\n", timebuf, state->server_id);
 
-                // --- NOVO: Líder envia PACKET_TYPE_COORDINATOR por BROADCAST ---
-                // Para isso, o socket precisa ter a opção SO_BROADCAST habilitada.
-                // Isso deve ser feito uma vez na inicialização do socket (no initServer).
-                // E o endereço de destino deve ser o IP de broadcast (255.250.255.255)
-                // ou o endereço de broadcast da sub-rede local.
-
+                // COORDINATOR por broadcast (já existente)
                 packet coord_pkt = {.type = PACKET_TYPE_COORDINATOR};
                 coord_pkt.data.server_info.server_id = state->server_id;
                 coord_pkt.data.server_info.server_addr = self_addr;
 
-                struct sockaddr_in broadcast_addr;
-                memset(&broadcast_addr, 0, sizeof(broadcast_addr));
-                broadcast_addr.sin_family = AF_INET;
-                broadcast_addr.sin_port = htons(PORT);                    // A mesma porta que clientes e servidores escutam
-                broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST); // 255.255.255.255
-
-                // Certifique-se que o socket 'state->sock' tem a opção SO_BROADCAST ativada.
-                // Isso deve ser feito em initServer.
                 sendto(state->sock, &coord_pkt, sizeof(coord_pkt), 0,
                        (struct sockaddr *)&broadcast_addr, sizeof(broadcast_addr));
 
-                printf("%s Server (ID: %u, LÍDER): Enviou HEARTBEATs e COORDINATOR por broadcast.\n", timebuf, state->server_id);
+                printf("%s Server (ID: %u, LÍDER): Enviou COORDINATOR por broadcast.\n", timebuf, state->server_id);
                 last_heartbeat_sent_time = now;
             }
         }
