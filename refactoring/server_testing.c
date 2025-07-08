@@ -10,17 +10,16 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <time.h> // Para time()
-#include "common.h" // Inclua o common.h atualizado!
 #include "discoveryService.h"
 #include "interfaceService.h"
 #include "processingService.h"
+#include "common.h" // Inclua o common.h atualizado!
 #include <errno.h> // Para lidar com timeouts de recvfrom
 
 // --- CONSTANTES ---
 #define SERVER_RECV_TIMEOUT_SEC 1 // Timeout para recvfrom no loop principal do servidor
 
-// --- FUNÇÃO DA THREAD DE GERENCIAMENTO DE LIDERANÇA (SERÁ IMPLEMENTADA EM processingService.c OU NOVO leadershipManager.c) ---
-// Declaração para que main possa chamá-la.
+// --- FUNÇÃO DA THREAD DE GERENCIAMENTO DE LIDERANÇA (IMPLEMENTADA EM processingService.c) ---
 void *manage_server_role_thread(void *arg);
 
 
@@ -30,7 +29,7 @@ int main(int argc, char* argv[]) {
     struct sockaddr_in cliAddr; 
     socklen_t len = sizeof(cliAddr);
     pthread_t request_handler_tid; // Thread ID for handling client requests
-    pthread_t leadership_manager_tid; // NOVO: Thread ID para gerenciar a liderança
+    pthread_t leadership_manager_tid; // Thread ID para gerenciar a liderança
 
     const size_t timeBufSize = 64;
     char timebuf[timeBufSize];
@@ -39,206 +38,191 @@ int main(int argc, char* argv[]) {
     // 1. Inicialização do estado do servidor
     init_server_state(&state); // Inicializa mutexes existentes e contadores
 
-    // 2. Leitura dos argumentos de linha de comando: porta e ID do servidor
-    // initServer já verifica se há 2 argumentos (porta e ID)
-    int socketNumber = initServer(argc, argv); // initServer agora valida o número de args
-    state.sock = socketNumber;
-    
-    // Extrair o server_id do segundo argumento
-    if (argc < 3) {
-        fprintf(stderr, "Uso: %s <porta> <server_id>\n", argv[0]);
+    // 2. Leitura dos argumentos de linha de comando: porta, ID do servidor e flag de líder
+    if (argc < 4) { // Espera <porta> <server_id> <1_ou_0_para_lider>
+        fprintf(stderr, "Uso: %s <porta> <server_id> <1_ou_0_para_lider>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    state.server_id = (uint32_t)atoi(argv[2]); // Atribui o ID único a este servidor
-    state.is_leader = 0; // Por padrão, começa como seguidor
-    state.current_leader_id = 0; // Desconhecido no início
+
+    int port = atoi(argv[1]); // Porta
+    state.server_id = (uint32_t)atoi(argv[2]); // ID único deste servidor
+    int initial_is_leader_flag = atoi(argv[3]); // Flag para iniciar como líder ou seguidor
+
+    // Verifica se a porta é a definida em common.h (opcional)
+    if (port != PORT) {
+        fprintf(stderr, "Error: Invalid port number. It must be %d.\n", PORT);
+        exit(EXIT_FAILURE);
+    }
+
+    // Passa o socketNumber para a struct state.
+    // Lembre-se que initServer agora retorna o socket.
+    int socketNumber = initServer(argc, argv); // initServer agora valida args de porta E BIND PARA 127.0.0.1
+    state.sock = socketNumber; // Atribui o socket principal à server_state
+
+    // --- NOVO: Atribui o papel inicial do servidor com base no argumento ---
+    if (initial_is_leader_flag == 1) {
+        state.is_leader = 1; // Inicia como líder
+        state.current_leader_id = state.server_id; // Ele é o líder
+        // Define o endereço do líder para 127.0.0.1 para teste local
+        state.current_leader_addr.sin_family = AF_INET;
+        state.current_leader_addr.sin_port = htons(PORT);
+        state.current_leader_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
+        printf("Server (ID: %u): Iniciado como LÍDER.\n", state.server_id);
+    } else {
+        state.is_leader = 0; // Inicia como seguidor
+        state.current_leader_id = 0; // Ainda não conhece o líder
+        printf("Server (ID: %u): Iniciado como SEGUIDOR.\n", state.server_id);
+    }
+    // Outros campos da state são inicializados em init_server_state ou aqui
     state.election_in_progress = 0;
     state.num_known_servers = 0;
-    state.last_leader_heartbeat_time = 0; // Inicializa com 0
-    // Mutexes de replicação e de known_servers já inicializados em init_server_state
+    state.last_leader_heartbeat_time = 0;
 
     getInitServerState(timebuf, timeBufSize); // Imprime estado inicial do servidor
 
-    // NOVO: Configura timeout para recvfrom no loop principal do servidor
-    // Para que a thread principal não bloqueie infinitamente e possa reagir a mudanças de estado.
+    // Configura timeout para recvfrom no loop principal do servidor
     struct timeval tv;
     tv.tv_sec = SERVER_RECV_TIMEOUT_SEC;
     tv.tv_usec = 0;
     setsockopt(socketNumber, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 
-    // NOVO: Cria a thread de gerenciamento de liderança
+    // Cria a thread de gerenciamento de liderança
     pthread_create(&leadership_manager_tid, NULL, manage_server_role_thread, &state);
-    pthread_detach(leadership_manager_tid); // Permite que a thread libere seus recursos automaticamente
+    pthread_detach(leadership_manager_tid);
 
     // 3. Loop Principal do Servidor
     while (1) {
-        // Tenta receber qualquer pacote
         int n = recvfrom(socketNumber, &pkt, sizeof(pkt), 0, (struct sockaddr *)&cliAddr, &len);
 
         if (n < 0) {
             if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                // Timeout, significa que não recebeu nada por SERVER_RECV_TIMEOUT_SEC.
-                // A thread principal pode então verificar outras condições ou continuar.
                 continue; 
             } else {
                 perror("Erro ao receber pacote no main do servidor");
-                break; // Erro fatal, sai do loop
+                break;
             }
         }
         
-        if (n == 0) { // Conexão fechada, improvável em UDP mas bom para verificar
+        if (n == 0) {
             continue;
         }
-
-        // NOVO: Proteger acesso a variáveis de estado compartilhadas
-        // É crucial travar o mutex 'state.lock' ao acessar ou modificar campos da 'state'
-        // que são compartilhados entre a thread principal e as threads de tratamento de requisições,
-        // e também os mutexes específicos para liderança e servers conhecidos.
         
-        // Bloqueia o mutex geral, mas seja cauteloso para não causar deadlocks
-        // com os mutexes da thread de liderança.
-        // É melhor bloquear os mutexes mais específicos primeiro.
-        pthread_mutex_lock(&state.known_servers_lock); // Trava a lista de servidores conhecidos
-        pthread_mutex_lock(&state.lock); // Trava o estado geral e a lista de clientes
+        pthread_mutex_lock(&state.known_servers_lock);
+        pthread_mutex_lock(&state.lock); 
 
-
-        // --- Despacho de Pacotes ---
         switch (pkt.type) {
             case PACKET_TYPE_DESC:
-                // Lógica de Descoberta: Servidor responde ao cliente.
-                // NOVO: Apenas o líder deve responder com DESC_ACK.
-                // Servidores secundários podem ignorar ou responder com REDIRECT.
                 if (state.is_leader) {
                     packet resp_desc_ack = {.type = PACKET_TYPE_DESC_ACK};
-                    // O DESC_ACK deve conter o server_info_data do líder.
-                    // Para isso, a struct 'requisicao_ack' em common.h precisar ter o 'server_info_data'.
-                    // Ou, crie uma nova struct 'desc_ack_data' na union 'packet'.
-                    // Vamos usar 'server_info_data' diretamente como exemplo para o DESC_ACK aqui.
-                    resp_desc_ack.data.server_info.server_id = state.server_id;
-                    resp_desc_ack.data.server_info.server_addr.sin_family = AF_INET;
-                    resp_desc_ack.data.server_info.server_addr.sin_port = htons(PORT); // Porta do servidor
-                    resp_desc_ack.data.server_info.server_addr.sin_addr.s_addr = htonl(INADDR_ANY); // Ou o IP real da interface
+                    resp_desc_ack.data.desc_ack.responding_server_info.server_id = state.server_id;
+                    resp_desc_ack.data.desc_ack.responding_server_info.server_addr.sin_family = AF_INET;
+                    resp_desc_ack.data.desc_ack.responding_server_info.server_addr.sin_port = htons(PORT);
+                    // --- PONTO AJUSTADO PARA LOCAL: ANUNCIAR 127.0.0.1 NO DESC_ACK ---
+                    resp_desc_ack.data.desc_ack.responding_server_info.server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
                     
-                    // Se o seu serverAddr em initServer já tem o IP da interface, use-o.
-                    // Ou o servidor pode descobrir seu próprio IP e armazenar em 'state'.
-                    // Para depuração, inet_ntoa(cliAddr.sin_addr) mostra o remetente,
-                    // mas para 'server_addr' no pacote, precisamos do IP deste servidor.
-                    
-                    // Assumindo que você tem acesso ao IP local do servidor:
-                    // get_local_ip_address(&resp_desc_ack.data.server_info.server_addr.sin_addr);
-
                     sendto(socketNumber, &resp_desc_ack, sizeof(resp_desc_ack), 0, (struct sockaddr *)&cliAddr, len);
-                    find_or_add_client(&state, &cliAddr); // Adiciona o cliente à lista (se for líder)
-                    printf("Server (ID: %u, Líder): Respondeu DESC_ACK para %s:%d\n",
-                           state.server_id, inet_ntoa(cliAddr.sin_addr), ntohs(cliAddr.sin_port));
+                    find_or_add_client(&state, &cliAddr);
+                    printf("Server (ID: %u, Líder): Respondeu DESC_ACK para %s:%d (anunciando %s:%d)\n",
+                           state.server_id, inet_ntoa(cliAddr.sin_addr), ntohs(cliAddr.sin_port),
+                           inet_ntoa(resp_desc_ack.data.desc_ack.responding_server_info.server_addr.sin_addr),
+                           ntohs(resp_desc_ack.data.desc_ack.responding_server_info.server_addr.sin_port));
                 } else {
-                    // Seguidor: Opcional, pode redirecionar o cliente para o líder
-                    // Ou simplesmente ignora o DESC, esperando que o cliente encontre o COORDINATOR.
-                    // Se o cliente usa find_leader que espera COORDINATOR, isso é menos crítico.
-                    // Se o cliente enviar um REQ para um seguidor, o seguidor NÃO vai processar.
-                    // O cliente deve descobrir o líder via COORDINATOR.
                     printf("Server (ID: %u, Seguidor): Ignorou DESC de %s:%d (não é o líder).\n",
                            state.server_id, inet_ntoa(cliAddr.sin_addr), ntohs(cliAddr.sin_port));
                 }
                 break;
 
             case PACKET_TYPE_REQ:
-                // Lógica de Requisição de Cliente: Processa apenas se for o líder
                 if (state.is_leader) {
-                    // Aloca memória para o contexto da requisição e cria uma thread para handle_request
                     request_context *ctx = malloc(sizeof(request_context));
                     if (ctx == NULL) {
                         perror("Failed to allocate request context");
-                        // Lidar com erro: pode enviar um NACK ou ignorar
                         break;
                     }
                     ctx->pkt = pkt;
                     ctx->addr = cliAddr;
                     ctx->addrlen = len;
                     ctx->sock = socketNumber;
-                    ctx->state = &state; // Passa o ponteiro para o estado global do servidor
+                    ctx->state = &state;
 
                     pthread_create(&request_handler_tid, NULL, handle_request, ctx);
-                    pthread_detach(request_handler_tid); // Thread libera seus recursos ao terminar
+                    pthread_detach(request_handler_tid);
                 } else {
-                    // Seguidor: Ignora ou redireciona a requisição.
-                    // O cliente espera que o líder processe.
-                    // Se um cliente persistir em enviar para um seguidor, ele não receberá ACK.
                     printf("Server (ID: %u, Seguidor): Ignorou REQ %u de %s:%d (não é o líder).\n",
                            state.server_id, pkt.seqn, inet_ntoa(cliAddr.sin_addr), ntohs(cliAddr.sin_port));
                 }
                 break;
 
-            // --- NOVOS TIPOS DE PACOTES PARA GERENCIAMENTO DE CLUSTER/ELEIÇÃO ---
-
             case PACKET_TYPE_HEARTBEAT:
-                // Recebido por seguidores do líder.
-                // A thread 'manage_server_role_thread' monitorará isso.
-                // Apenas registra o recebimento e atualiza a last_leader_heartbeat_time no estado.
-                // Bloqueia o mutex do estado de liderança antes de atualizar.
-                pthread_mutex_lock(&state.leader_lock); // Protege o estado de liderança
+                pthread_mutex_lock(&state.leader_lock);
+                // NOVO: Adiciona o servidor do heartbeat na lista de conhecidos, se não estiver.
+                add_or_update_known_server(&state, pkt.data.server_info.server_id, &pkt.data.server_info.server_addr);
+                
                 if (pkt.data.server_info.server_id == state.current_leader_id) {
                     state.last_leader_heartbeat_time = time(NULL);
-                    // Opcional: Atualizar a addr do líder caso ela mude
-                    // state.current_leader_addr = pkt.data.server_info.server_addr;
-                    // printf("Server (ID: %u): Recebeu HEARTBEAT do líder (ID: %u).\n",
-                    //        state.server_id, state.current_leader_id);
+                    printf("Server (ID: %u): Recebeu HEARTBEAT do líder (ID: %u).\n",
+                            state.server_id, state.current_leader_id);
                 }
-                // Se o heartbeat for de um ID diferente do líder atual,
-                // pode ser um servidor antigo tentando se anunciar. Ignorar.
                 pthread_mutex_unlock(&state.leader_lock);
                 break;
 
             case PACKET_TYPE_ELECTION:
-                // Recebido por qualquer servidor para iniciar uma eleição.
-                // NOVO: Adicionar o remetente do ELECTION na lista de 'known_servers' se não estiver lá.
-                // (Isso é feito na função handle_election_packet na thread de gerenciamento)
-                // A thread 'manage_server_role_thread' será notificada/processará isso.
+                pthread_mutex_lock(&state.leader_lock); // Para proteger election_in_progress
+                // NOVO: Adiciona o servidor que enviou a eleição na lista de conhecidos
+                add_or_update_known_server(&state, pkt.data.server_info.server_id, &pkt.data.server_info.server_addr);
+
                 printf("Server (ID: %u): Recebeu ELECTION de ID %u\n", state.server_id, pkt.data.server_info.server_id);
-                // NOTA: A lógica real de eleição e resposta será na manage_server_role_thread.
-                // Aqui apenas sinaliza a thread de gerenciamento.
-                // Poderíamos usar uma variável de condição para sinalizar ou colocar o pacote em uma fila.
-                // Para simplificar, a thread de gerenciamento irá esvaziar a fila de entrada do socket ou
-                // a lógica de recebimento será toda lá. Por enquanto, a thread principal recebe e a outra processa.
-                // Se manage_server_role_thread estiver rodando 'recvfrom' no MESMO socket, haverá problemas.
-                // Melhor: main recebe tudo e despacha para queues ou funções apropriadas.
-                // Mas, para o bully, ele pode usar o mesmo socket.
                 
-                // NOVO: Se o servidor que recebeu ELECTION tem ID maior,
-                // ele envia um ALIVE e começa sua própria eleição.
-                // Se ID menor, envia ALIVE e não faz mais nada.
                 if (state.server_id > pkt.data.server_info.server_id) {
                     packet alive_resp = {.type = PACKET_TYPE_ALIVE};
                     alive_resp.data.server_info.server_id = state.server_id;
                     alive_resp.data.server_info.server_addr.sin_family = AF_INET;
                     alive_resp.data.server_info.server_addr.sin_port = htons(PORT);
-                    // get_my_ip(&alive_resp.data.server_info.server_addr.sin_addr); // Obter o IP real do servidor
-                    sendto(socketNumber, &alive_resp, sizeof(alive_resp), 0, (struct sockaddr *)&cliAddr, len); // cliAddr é o remetente do ELECTION
-                    printf("Server (ID: %u): Respondeu ALIVE para %u.\n", state.server_id, pkt.data.server_info.server_id);
-                    // Se eu sou maior, agora eu começo minha própria eleição
-                    // (Essa lógica seria na manage_server_role_thread se ela gerenciasse envios)
+                    // --- PONTO AJUSTADO PARA LOCAL: ANUNCIAR 127.0.0.1 NO ALIVE ---
+                    alive_resp.data.server_info.server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+                    
+                    sendto(socketNumber, &alive_resp, sizeof(alive_resp), 0, (struct sockaddr *)&cliAddr, len);
+                    printf("Server (ID: %u): Respondeu ALIVE para ID %u (anunciando %s:%d).\n", 
+                           state.server_id, pkt.data.server_info.server_id,
+                           inet_ntoa(alive_resp.data.server_info.server_addr.sin_addr),
+                           ntohs(alive_resp.data.server_info.server_addr.sin_port));
+
+                    // Se eu sou maior e respondi ALIVE, eu devo iniciar minha própria eleição se não estiver em uma
+                    if (!state.election_in_progress) {
+                        state.election_in_progress = 1;
+                        state.election_start_time = time(NULL);
+                        printf("Server (ID: %u): Iniciando minha própria eleição.\n", state.server_id);
+                    }
                 }
+                pthread_mutex_unlock(&state.leader_lock);
                 break;
 
             case PACKET_TYPE_ALIVE:
-                // Recebido em resposta a um ELECTION enviado por este servidor.
-                // A thread 'manage_server_role_thread' monitorará isso para decidir se venceu a eleição.
+                pthread_mutex_lock(&state.leader_lock); // Para proteger election_in_progress, current_leader_id
+                // NOVO: Adiciona o servidor que enviou ALIVE na lista de conhecidos
+                add_or_update_known_server(&state, pkt.data.server_info.server_id, &pkt.data.server_info.server_addr);
+
                 printf("Server (ID: %u): Recebeu ALIVE de ID %u\n", state.server_id, pkt.data.server_info.server_id);
-                // A thread de gerenciamento de liderança precisa contar essas respostas.
-                //pthread_mutex_lock(&state.leader_lock);
-                // if (state.election_in_progress && pkt.data.server_info.server_id > state.server_id) {
-                //     // Alguém maior está vivo, desiste da minha eleição
-                //     state.election_in_progress = 0;
-                //     // Pode atualizar current_leader_id para este maior temporariamente
-                // }
-                //pthread_mutex_unlock(&state.leader_lock);
+
+                // Se eu estou em eleição e recebi ALIVE de alguém com ID maior, desisto da minha eleição.
+                if (state.election_in_progress && pkt.data.server_info.server_id > state.server_id) {
+                    state.election_in_progress = 0; // Desiste da eleição
+                    // Pode ser que este ALIVE seja do novo líder que ainda não enviou COORDINATOR.
+                    // Atualize current_leader_id para este ID maior temporariamente.
+                    // A confirmação virá com um COORDINATOR.
+                    state.current_leader_id = pkt.data.server_info.server_id;
+                    state.current_leader_addr = pkt.data.server_info.server_addr;
+                    printf("Server (ID: %u): Recebeu ALIVE de ID maior (%u). Desistindo da eleição.\n",
+                           state.server_id, pkt.data.server_info.server_id);
+                }
+                pthread_mutex_unlock(&state.leader_lock);
                 break;
 
             case PACKET_TYPE_COORDINATOR:
-                // Recebido quando um novo líder é eleito.
-                // Atualiza o estado para refletir o novo líder.
-                // A thread 'manage_server_role_thread' também monitorará isso.
-                pthread_mutex_lock(&state.leader_lock); // Protege o estado de liderança
+                pthread_mutex_lock(&state.leader_lock);
+                // NOVO: Adiciona o servidor que enviou COORDINATOR na lista de conhecidos
+                add_or_update_known_server(&state, pkt.data.server_info.server_id, &pkt.data.server_info.server_addr);
+
                 if (state.current_leader_id != pkt.data.server_info.server_id) {
                     state.current_leader_id = pkt.data.server_info.server_id;
                     state.current_leader_addr = pkt.data.server_info.server_addr;
@@ -246,47 +230,33 @@ int main(int argc, char* argv[]) {
                     printf("Server (ID: %u): NOVO COORDENADOR (Líder) é ID %u em %s:%d\n",
                            state.server_id, state.current_leader_id,
                            inet_ntoa(state.current_leader_addr.sin_addr), ntohs(state.current_leader_addr.sin_port));
-                    state.election_in_progress = 0; // Eleição terminada
+                    state.election_in_progress = 0; // Eleição terminada (se estava em uma)
                 }
                 pthread_mutex_unlock(&state.leader_lock);
                 break;
             
             case PACKET_TYPE_STATE_REPLICATION:
-                // Recebido por seguidores do líder.
-                // O seguidor aplica o estado e envia um ACK de volta.
-                if (!state.is_leader) { // Somente seguidores devem receber isso
-                    // pthread_mutex_lock(&state.lock); // Proteger o estado ao aplicá-lo
-                    // Lógica para aplicar o estado replicado.
-                    // Isso é complexo, envolve copiar total_reqs, total_sum, e os client_entry.
-                    // Para simplificar agora, apenas os totais.
-                    // state->total_reqs = pkt.data.state_repl.total_reqs_at_leader;
-                    // state->total_sum = pkt.data.state_repl.total_sum_at_leader;
-                    // Lógica para replicar clientes: se a replicação for por snapshot, precisa copiar o array.
-                    // Se for por update incremental, aplicar as mudanças.
+                if (!state.is_leader) {
+                    state.total_reqs = pkt.data.state_repl.total_reqs_at_leader;
+                    state.total_sum = pkt.data.state_repl.total_sum_at_leader;
+                    // REPLICAÇÃO DE CLIENTES: Isso é complexo e não está na state_replication_data atual.
+                    // Se você precisar, precisará de uma forma de serializar e deserializar 'clients'.
 
-                    // Enviar ACK de replicação de volta ao líder
                     packet state_ack_resp = {.type = PACKET_TYPE_STATE_ACK};
                     state_ack_resp.data.state_ack.server_id = state.server_id;
-                    state_ack_resp.data.state_ack.replicated_seqn = pkt.seqn; // ACK para a seqn da requisição replicada
-                    // O remetente do STATE_REPLICATION é o líder, então envia de volta para cliAddr.
+                    state_ack_resp.data.state_ack.replicated_seqn = pkt.seqn;
                     sendto(socketNumber, &state_ack_resp, sizeof(state_ack_resp), 0, (struct sockaddr *)&cliAddr, len);
                     printf("Server (ID: %u, Seguidor): Estado replicado (req %u) e ACK enviado para o líder %s:%d\n",
                            state.server_id, pkt.seqn, inet_ntoa(cliAddr.sin_addr), ntohs(cliAddr.sin_port));
-                    // pthread_mutex_unlock(&state.lock);
                 } else {
-                    // Líder não deveria receber STATE_REPLICATION (apenas de um líder antigo ou erro)
                     printf("Server (ID: %u, Líder): Recebeu STATE_REPLICATION inesperado de %s:%d\n",
                            state.server_id, inet_ntoa(cliAddr.sin_addr), ntohs(cliAddr.sin_port));
                 }
                 break;
 
             case PACKET_TYPE_STATE_ACK:
-                // Recebido por líder de um seguidor.
-                // A thread 'handle_request' (ou uma função de replicação no líder) estará esperando por isso.
-                // Ela usa 'state.replication_ack_lock' e 'state.replication_ack_cond'.
                 pthread_mutex_lock(&state.replication_ack_lock);
                 state.replication_acks_received++;
-                // Sinaliza a variável de condição para "acordar" a thread que está esperando
                 pthread_cond_signal(&state.replication_ack_cond);
                 printf("Server (ID: %u, Líder): Recebeu STATE_ACK de ID %u. Total ACKs: %d\n",
                        state.server_id, pkt.data.state_ack.server_id, state.replication_acks_received);
@@ -294,7 +264,6 @@ int main(int argc, char* argv[]) {
                 break;
 
             default:
-                // Pacotes desconhecidos ou não tratados aqui
                 printf("Server (ID: %u): Pacote de tipo desconhecido (%hu) de %s:%d\n",
                        state.server_id, pkt.type, inet_ntoa(cliAddr.sin_addr), ntohs(cliAddr.sin_port));
                 break;
@@ -304,8 +273,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Finalização
-    // pthread_cancel(leadership_manager_tid); // Pode ser necessário cancelar a thread de gerenciamento
-    pthread_join(leadership_manager_tid, NULL); // Esperar a thread de gerenciamento terminar
+    pthread_join(leadership_manager_tid, NULL);
     endServer(socketNumber);
     return 0;
 }
