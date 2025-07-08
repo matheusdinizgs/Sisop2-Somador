@@ -190,17 +190,14 @@ int main(int argc, char *argv[])
             // A thread 'manage_server_role_thread' monitorará isso.
             // Apenas registra o recebimento e atualiza a last_leader_heartbeat_time no estado.
             // Bloqueia o mutex do estado de liderança antes de atualizar.
-            pthread_mutex_lock(&state.leader_lock); // Protege o estado de liderança
+            // Adiciona o servidor remetente à lista de conhecidos
+            add_or_update_known_server(&state, pkt.data.server_info.server_id, &pkt.data.server_info.server_addr);
+
+            pthread_mutex_lock(&state.leader_lock);
             if (pkt.data.server_info.server_id == state.current_leader_id)
             {
                 state.last_leader_heartbeat_time = time(NULL);
-                // Opcional: Atualizar a addr do líder caso ela mude
-                // state.current_leader_addr = pkt.data.server_info.server_addr;
-                // printf("Server (ID: %u): Recebeu HEARTBEAT do líder (ID: %u).\n",
-                //        state.server_id, state.current_leader_id);
             }
-            // Se o heartbeat for de um ID diferente do líder atual,
-            // pode ser um servidor antigo tentando se anunciar. Ignorar.
             pthread_mutex_unlock(&state.leader_lock);
             break;
 
@@ -241,19 +238,28 @@ int main(int argc, char *argv[])
             break;
 
         case PACKET_TYPE_COORDINATOR:
-            // Recebido quando um novo líder é eleito.
-            // Atualiza o estado para refletir o novo líder.
-            // A thread 'manage_server_role_thread' também monitorará isso.
-            pthread_mutex_lock(&state.leader_lock); // Protege o estado de liderança
+            pthread_mutex_lock(&state.leader_lock);
+
+            // NOVO: Se estou em eleição e recebo COORDINATOR de ID maior, cancelo minha eleição
+            if (state.election_in_progress && pkt.data.server_info.server_id > state.server_id)
+            {
+                printf("Server (ID: %u): Cancelando eleição. Líder (ID: %u) se anunciou.\n",
+                       state.server_id, pkt.data.server_info.server_id);
+                state.election_in_progress = 0;
+            }
+
             if (state.current_leader_id != pkt.data.server_info.server_id)
             {
                 state.current_leader_id = pkt.data.server_info.server_id;
                 state.current_leader_addr = pkt.data.server_info.server_addr;
-                state.is_leader = (state.server_id == state.current_leader_id); // Atualiza meu próprio status
+                state.is_leader = (state.server_id == state.current_leader_id);
+                state.last_leader_heartbeat_time = time(NULL); // NOVO: Atualiza tempo do heartbeat
+
                 printf("Server (ID: %u): NOVO COORDENADOR (Líder) é ID %u em %s:%d\n",
                        state.server_id, state.current_leader_id,
-                       inet_ntoa(state.current_leader_addr.sin_addr), ntohs(state.current_leader_addr.sin_port));
-                state.election_in_progress = 0; // Eleição terminada
+                       inet_ntoa(state.current_leader_addr.sin_addr),
+                       ntohs(state.current_leader_addr.sin_port));
+                state.election_in_progress = 0;
             }
             pthread_mutex_unlock(&state.leader_lock);
             break;

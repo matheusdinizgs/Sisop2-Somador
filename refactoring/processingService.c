@@ -238,6 +238,7 @@ void *manage_server_role_thread(void *arg)
     time_t last_heartbeat_sent_time = 0; // Para o líder
     time_t election_start_time = 0;      // Para o seguidor/candidato
     int initial_election_done = 0;       // NOVO: Flag para eleição inicial
+    time_t startup_time = time(NULL);    // NOVO: Tempo de inicialização
 
     // NOVO: Adicionar a si mesmo à lista de servidores conhecidos
     // Isso é importante para que o líder saiba para quem replicar, e seguidores para quem enviar ELECTION.
@@ -266,7 +267,9 @@ void *manage_server_role_thread(void *arg)
     }
 
     add_or_update_known_server(state, state->server_id, &self_addr);
-    sleep(2);
+
+    // NOVO: Aguarda mais tempo antes da eleição inicial
+    sleep(5); // Aumenta de 2 para 5 segundos
 
     while (1)
     {
@@ -275,9 +278,19 @@ void *manage_server_role_thread(void *arg)
 
         pthread_mutex_lock(&state->leader_lock); // Trava o estado de liderança
 
-        // Eleição inicial se ainda não houve uma
+        // NOVO: Eleição inicial com verificação de líder existente
         if (!initial_election_done)
         {
+            // Verifica se já descobriu um líder durante o período de espera
+            if (state->current_leader_id != 0 && state->current_leader_id != state->server_id)
+            {
+                printf("%s Server (ID: %u): Líder existente (ID: %u) já descoberto. Não iniciando eleição.\n",
+                       timebuf, state->server_id, state->current_leader_id);
+                initial_election_done = 1;
+                pthread_mutex_unlock(&state->leader_lock);
+                continue;
+            }
+
             printf("%s Server (ID: %u): Iniciando eleição inicial...\n", timebuf, state->server_id);
 
             packet election_pkt = {.type = PACKET_TYPE_ELECTION};
